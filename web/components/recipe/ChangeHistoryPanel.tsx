@@ -7,6 +7,7 @@ const TYPE_LABELS: Record<ChangeLogEntryType, string> = {
   quantity: "Ingredient Quantity",
   "unit-conversion": "Unit Conversion",
   "ai-request": "AI Request",
+  undo: "Undo",
 };
 
 function formatTimestamp(iso: string): string {

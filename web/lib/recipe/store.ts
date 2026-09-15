@@ -20,7 +20,12 @@ export type UnitSystem = "imperial" | "metric";
 // "substitution" and "open-ended" both land here as "ai-request" for now — without a
 // model in the loop there is no way to tell them apart, so we log what was asked
 // rather than guessing at intent.
-export type ChangeLogEntryType = "servings" | "quantity" | "unit-conversion" | "ai-request";
+export type ChangeLogEntryType =
+  | "servings"
+  | "quantity"
+  | "unit-conversion"
+  | "ai-request"
+  | "undo";
 
 export interface ChangeLogEntry {
   id: string;
@@ -29,9 +34,14 @@ export interface ChangeLogEntry {
   createdAt: string; // ISO timestamp
 }
 
+interface UndoEntry {
+  recipe: Recipe;
+  changeEntryId: string; // the changeLog entry this snapshot reverts
+}
+
 interface RecipeStore {
   recipe: Recipe | null;
-  undoStack: Recipe[]; // previous recipe states, most recent last
+  undoStack: UndoEntry[]; // previous recipe states, most recent last
   checkedIngredientIds: string[]; // ingredients marked "I have this" in the current workspace
   savedRecipes: SavedRecipe[];
   kitchenItems: KitchenItem[];
@@ -158,10 +168,18 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     });
   },
   undo: () => {
-    const { undoStack } = get();
+    const { undoStack, changeLog } = get();
     if (undoStack.length === 0) return;
-    const previous = undoStack[undoStack.length - 1];
-    set({ recipe: previous, undoStack: undoStack.slice(0, -1) });
+    const last = undoStack[undoStack.length - 1];
+    const undoneEntry = changeLog.find((entry) => entry.id === last.changeEntryId);
+    set({
+      recipe: last.recipe,
+      undoStack: undoStack.slice(0, -1),
+      changeLog: [
+        ...changeLog,
+        makeLogEntry("undo", undoneEntry ? `Undid: ${undoneEntry.summary}` : "Undid last change"),
+      ],
+    });
   },
   toggleIngredientChecked: (id) => {
     const { checkedIngredientIds } = get();
@@ -192,16 +210,14 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     if (!recipe || recipe.servings === null || recipe.servings <= 0) return;
     const factor = newServings / recipe.servings;
     const roundedServings = roundServings(newServings);
+    const entry = makeLogEntry(
+      "servings",
+      `Changed servings from ${recipe.servings} to ${roundedServings}`,
+    );
     set({
       recipe: scaleRecipe(recipe, factor, newServings),
-      undoStack: [...undoStack, recipe],
-      changeLog: [
-        ...changeLog,
-        makeLogEntry(
-          "servings",
-          `Changed servings from ${recipe.servings} to ${roundedServings}`,
-        ),
-      ],
+      undoStack: [...undoStack, { recipe, changeEntryId: entry.id }],
+      changeLog: [...changeLog, entry],
     });
   },
   rescaleByIngredient: (ingredientId, newQuantity) => {
@@ -212,16 +228,14 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     const factor = newQuantity / anchor.quantity;
     const newServings = recipe.servings !== null ? recipe.servings * factor : null;
     const unitSuffix = anchor.unit ? ` ${anchor.unit}` : "";
+    const entry = makeLogEntry(
+      "quantity",
+      `Changed ${anchor.item} from ${anchor.quantity}${unitSuffix} to ${roundQuantity(newQuantity)}${unitSuffix}`,
+    );
     set({
       recipe: scaleRecipe(recipe, factor, newServings),
-      undoStack: [...undoStack, recipe],
-      changeLog: [
-        ...changeLog,
-        makeLogEntry(
-          "quantity",
-          `Changed ${anchor.item} from ${anchor.quantity}${unitSuffix} to ${roundQuantity(newQuantity)}${unitSuffix}`,
-        ),
-      ],
+      undoStack: [...undoStack, { recipe, changeEntryId: entry.id }],
+      changeLog: [...changeLog, entry],
     });
   },
   logAiRequest: (subject, question) => {
