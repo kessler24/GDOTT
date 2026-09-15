@@ -42,7 +42,20 @@ export default function IngredientRow({ ingredient }: { ingredient: Ingredient }
         >
           {ingredient.item}
         </IngredientQuestionPopover>
-        {ingredient.prep ? `, ${ingredient.prep}` : ""}
+        {ingredient.prep && (
+          <>
+            {", "}
+            <IngredientQuestionPopover
+              label={`Ask about ${ingredient.prep}`}
+              onSubmit={(question) => {
+                // No AI wiring yet — this is the seam the substitution feature will plug into.
+                console.log(`[prep question] ${ingredient.id}:`, question);
+              }}
+            >
+              {ingredient.prep}
+            </IngredientQuestionPopover>
+          </>
+        )}
         {ingredient.optional && (
           <span className="ml-2 text-xs text-gray-400">(optional)</span>
         )}
