@@ -15,12 +15,16 @@ export interface KitchenItem {
   addedAt: string; // ISO timestamp
 }
 
+export type UnitSystem = "imperial" | "metric";
+
 interface RecipeStore {
   recipe: Recipe | null;
   undoStack: Recipe[]; // previous recipe states, most recent last
   checkedIngredientIds: string[]; // ingredients marked "I have this" in the current workspace
   savedRecipes: SavedRecipe[];
   kitchenItems: KitchenItem[];
+  unitSystem: UnitSystem;
+  setUnitSystem: (system: UnitSystem) => void;
   newWorkspace: () => void;
   loadRecipe: (recipe: Recipe) => void;
   undo: () => void;
@@ -103,6 +107,8 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
   checkedIngredientIds: [],
   savedRecipes: [],
   kitchenItems: [],
+  unitSystem: "imperial",
+  setUnitSystem: (system) => set({ unitSystem: system }),
   newWorkspace: () => {
     const { recipe, savedRecipes, checkedIngredientIds, kitchenItems } = get();
     set({
