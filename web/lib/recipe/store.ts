@@ -3,25 +3,42 @@ import type { Recipe } from "./types";
 import { sampleRecipe } from "./sample";
 
 interface RecipeStore {
-  recipe: Recipe;
-  history: Recipe[]; // previous recipe states, most recent last — the undo stack
+  recipe: Recipe | null;
+  undoStack: Recipe[]; // previous recipe states, most recent last
   savedRecipes: Recipe[];
-  save: () => void;
+  newWorkspace: () => void;
+  loadRecipe: (recipe: Recipe) => void;
   undo: () => void;
+}
+
+function archiveCurrent(recipe: Recipe | null, savedRecipes: Recipe[]): Recipe[] {
+  return recipe ? [...savedRecipes, recipe] : savedRecipes;
 }
 
 export const useRecipeStore = create<RecipeStore>((set, get) => ({
   recipe: sampleRecipe,
-  history: [],
+  undoStack: [],
   savedRecipes: [],
-  save: () => {
+  newWorkspace: () => {
     const { recipe, savedRecipes } = get();
-    set({ savedRecipes: [...savedRecipes, recipe] });
+    set({
+      savedRecipes: archiveCurrent(recipe, savedRecipes),
+      recipe: null,
+      undoStack: [],
+    });
+  },
+  loadRecipe: (nextRecipe) => {
+    const { recipe, savedRecipes } = get();
+    set({
+      savedRecipes: archiveCurrent(recipe, savedRecipes),
+      recipe: nextRecipe,
+      undoStack: [],
+    });
   },
   undo: () => {
-    const { history } = get();
-    if (history.length === 0) return;
-    const previous = history[history.length - 1];
-    set({ recipe: previous, history: history.slice(0, -1) });
+    const { undoStack } = get();
+    if (undoStack.length === 0) return;
+    const previous = undoStack[undoStack.length - 1];
+    set({ recipe: previous, undoStack: undoStack.slice(0, -1) });
   },
 }));

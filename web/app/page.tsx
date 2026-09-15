@@ -12,7 +12,13 @@ export default function Home() {
       <div className="absolute right-6 top-6">
         <WorkspaceMenu />
       </div>
-      <RecipeWorkspace recipe={recipe} />
+      {recipe ? (
+        <RecipeWorkspace recipe={recipe} />
+      ) : (
+        <div className="mx-auto max-w-2xl p-6 text-sm text-gray-500">
+          No recipe loaded. Open one from Recipe History, or import a new one.
+        </div>
+      )}
     </main>
   );
 }
