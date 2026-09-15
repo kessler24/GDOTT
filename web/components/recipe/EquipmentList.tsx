@@ -11,7 +11,7 @@ export default function EquipmentList({ equipment }: { equipment: string[] }) {
       <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
         Equipment
       </h2>
-      <p className="mt-2 text-sm text-gray-900">
+      <div className="mt-2 text-sm text-gray-900">
         {equipment.map((item, i) => (
           <span key={`${item}-${i}`}>
             <IngredientQuestionPopover
@@ -23,7 +23,7 @@ export default function EquipmentList({ equipment }: { equipment: string[] }) {
             {i < equipment.length - 1 ? ", " : ""}
           </span>
         ))}
-      </p>
+      </div>
     </section>
   );
 }
