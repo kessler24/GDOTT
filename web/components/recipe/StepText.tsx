@@ -121,7 +121,12 @@ export default function StepText({ text }: { text: string }) {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Escape") closePopover();
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit();
+              } else if (e.key === "Escape") {
+                closePopover();
+              }
             }}
             placeholder="Ask about the highlighted text"
             aria-label="Ask about the highlighted text"
