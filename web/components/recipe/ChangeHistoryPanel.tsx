@@ -1,6 +1,7 @@
 "use client";
 
 import { useRecipeStore, type ChangeLogEntryType } from "@/lib/recipe/store";
+import HighlightedWords from "./HighlightedWords";
 
 const TYPE_LABELS: Record<ChangeLogEntryType, string> = {
   servings: "Serving Size",
@@ -57,13 +58,34 @@ export default function ChangeHistoryPanel({ onClose }: { onClose: () => void })
                       {formatTimestamp(entry.createdAt)}
                     </span>
                   </div>
-                  <p
-                    className={`mt-1 text-sm ${
-                      entry.undone ? "text-gray-400 line-through" : "text-gray-900"
-                    }`}
-                  >
-                    {entry.summary}
-                  </p>
+                  {entry.stepHighlight ? (
+                    <div className="mt-1">
+                      <p
+                        className={`text-sm ${
+                          entry.undone ? "text-gray-400 line-through" : "text-gray-900"
+                        }`}
+                      >
+                        <HighlightedWords
+                          text={entry.stepHighlight.fullText}
+                          start={entry.stepHighlight.wordStart}
+                          end={entry.stepHighlight.wordEnd}
+                        />
+                      </p>
+                      {entry.question && (
+                        <p className="mt-1 text-sm italic text-gray-600">
+                          &ldquo;{entry.question}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p
+                      className={`mt-1 text-sm ${
+                        entry.undone ? "text-gray-400 line-through" : "text-gray-900"
+                      }`}
+                    >
+                      {entry.summary}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>

@@ -22,12 +22,22 @@ export type UnitSystem = "imperial" | "metric";
 // rather than guessing at intent.
 export type ChangeLogEntryType = "servings" | "quantity" | "unit-conversion" | "ai-request";
 
+export interface StepHighlight {
+  fullText: string;
+  wordStart: number; // inclusive index into fullText.split(" ")
+  wordEnd: number; // inclusive
+}
+
 export interface ChangeLogEntry {
   id: string;
   type: ChangeLogEntryType;
   summary: string;
   createdAt: string; // ISO timestamp
   undone: boolean;
+  // Present only for step-anchored AI requests — lets the history panel render the
+  // full step with the asked-about words highlighted, same as the live step text.
+  question?: string;
+  stepHighlight?: StepHighlight;
 }
 
 interface UndoEntry {
@@ -54,6 +64,7 @@ interface RecipeStore {
   rescaleByServings: (newServings: number) => void;
   rescaleByIngredient: (ingredientId: string, newQuantity: number) => void;
   logAiRequest: (subject: string, question: string) => void;
+  logStepAiRequest: (fullText: string, wordStart: number, wordEnd: number, question: string) => void;
 }
 
 function isSameRecipe(a: Recipe, b: Recipe): boolean {
@@ -242,6 +253,14 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     const { changeLog } = get();
     set({
       changeLog: [...changeLog, makeLogEntry("ai-request", `Asked about "${subject}": ${question}`)],
+    });
+  },
+  logStepAiRequest: (fullText, wordStart, wordEnd, question) => {
+    const { changeLog } = get();
+    const highlighted = fullText.split(" ").slice(wordStart, wordEnd + 1).join(" ");
+    const entry = makeLogEntry("ai-request", `Asked about "${highlighted}": ${question}`);
+    set({
+      changeLog: [...changeLog, { ...entry, question, stepHighlight: { fullText, wordStart, wordEnd } }],
     });
   },
 }));
