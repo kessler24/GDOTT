@@ -72,7 +72,11 @@ export default function ChangeHistoryPanel({ onClose }: { onClose: () => void })
                         />
                       </p>
                       {entry.question && (
-                        <p className="mt-1 text-sm italic text-gray-600">
+                        <p
+                          className={`mt-1 text-sm italic ${
+                            entry.undone ? "text-gray-400 line-through" : "text-gray-600"
+                          }`}
+                        >
                           &ldquo;{entry.question}&rdquo;
                         </p>
                       )}
