@@ -16,9 +16,21 @@ export default function WorkspaceMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+        aria-label="Menu"
+        className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-50"
       >
-        Menu
+        <svg
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          className="h-5 w-5"
+        >
+          <line x1="3" y1="5" x2="17" y2="5" />
+          <line x1="3" y1="10" x2="17" y2="10" />
+          <line x1="3" y1="15" x2="17" y2="15" />
+        </svg>
       </button>
       {open && (
         <>
