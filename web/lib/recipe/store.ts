@@ -28,6 +28,8 @@ interface RecipeStore {
   toggleFavorite: (id: string) => void;
   deleteSaved: (id: string) => void;
   deleteKitchenItem: (id: string) => void;
+  rescaleByServings: (newServings: number) => void;
+  rescaleByIngredient: (ingredientId: string, newQuantity: number) => void;
 }
 
 function isSameRecipe(a: Recipe, b: Recipe): boolean {
@@ -71,6 +73,28 @@ function addCheckedToKitchen(
     });
   }
   return additions.length > 0 ? [...kitchenItems, ...additions] : kitchenItems;
+}
+
+function roundQuantity(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function roundServings(value: number): number {
+  return Math.max(1, Math.round(value));
+}
+
+// Linear ingredient-anchored/servings-anchored rescale — every quantity moves by the
+// same factor. Nonlinear cases (leaveners, salt, bake times) are a deliberate MVP gap.
+function scaleRecipe(recipe: Recipe, factor: number, newServings: number | null): Recipe {
+  return {
+    ...recipe,
+    servings: newServings !== null ? roundServings(newServings) : recipe.servings,
+    ingredients: recipe.ingredients.map((ingredient) =>
+      ingredient.quantity !== null
+        ? { ...ingredient, quantity: roundQuantity(ingredient.quantity * factor) }
+        : ingredient,
+    ),
+  };
 }
 
 export const useRecipeStore = create<RecipeStore>((set, get) => ({
@@ -128,5 +152,26 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
   deleteKitchenItem: (id) => {
     const { kitchenItems } = get();
     set({ kitchenItems: kitchenItems.filter((item) => item.id !== id) });
+  },
+  rescaleByServings: (newServings) => {
+    const { recipe, undoStack } = get();
+    if (!recipe || recipe.servings === null || recipe.servings <= 0) return;
+    const factor = newServings / recipe.servings;
+    set({
+      recipe: scaleRecipe(recipe, factor, newServings),
+      undoStack: [...undoStack, recipe],
+    });
+  },
+  rescaleByIngredient: (ingredientId, newQuantity) => {
+    const { recipe, undoStack } = get();
+    if (!recipe) return;
+    const anchor = recipe.ingredients.find((ingredient) => ingredient.id === ingredientId);
+    if (!anchor || anchor.quantity === null || anchor.quantity <= 0) return;
+    const factor = newQuantity / anchor.quantity;
+    const newServings = recipe.servings !== null ? recipe.servings * factor : null;
+    set({
+      recipe: scaleRecipe(recipe, factor, newServings),
+      undoStack: [...undoStack, recipe],
+    });
   },
 }));

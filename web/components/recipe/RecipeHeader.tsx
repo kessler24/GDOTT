@@ -1,6 +1,11 @@
+"use client";
+
 import type { Recipe } from "@/lib/recipe/types";
+import { useRecipeStore } from "@/lib/recipe/store";
+import EditablePopover from "./EditablePopover";
 
 export default function RecipeHeader({ recipe }: { recipe: Recipe }) {
+  const rescaleByServings = useRecipeStore((s) => s.rescaleByServings);
   const { title, servings, time } = recipe;
   const timeParts = [
     time.prepMin !== null ? `Prep ${time.prepMin} min` : null,
@@ -12,7 +17,18 @@ export default function RecipeHeader({ recipe }: { recipe: Recipe }) {
     <header className="border-b border-gray-200 pb-4">
       <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
       <div className="mt-1 flex flex-wrap gap-x-4 text-sm text-gray-500">
-        {servings !== null && <span>Serves {servings}</span>}
+        {servings !== null && (
+          <span>
+            Serves{" "}
+            <EditablePopover
+              value={servings}
+              label="Number of servings"
+              onSubmit={rescaleByServings}
+            >
+              {servings}
+            </EditablePopover>
+          </span>
+        )}
         {timeParts.map((part) => (
           <span key={part}>{part}</span>
         ))}
