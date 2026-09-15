@@ -20,18 +20,14 @@ export type UnitSystem = "imperial" | "metric";
 // "substitution" and "open-ended" both land here as "ai-request" for now — without a
 // model in the loop there is no way to tell them apart, so we log what was asked
 // rather than guessing at intent.
-export type ChangeLogEntryType =
-  | "servings"
-  | "quantity"
-  | "unit-conversion"
-  | "ai-request"
-  | "undo";
+export type ChangeLogEntryType = "servings" | "quantity" | "unit-conversion" | "ai-request";
 
 export interface ChangeLogEntry {
   id: string;
   type: ChangeLogEntryType;
   summary: string;
   createdAt: string; // ISO timestamp
+  undone: boolean;
 }
 
 interface UndoEntry {
@@ -104,7 +100,13 @@ function addCheckedToKitchen(
 }
 
 function makeLogEntry(type: ChangeLogEntryType, summary: string): ChangeLogEntry {
-  return { id: crypto.randomUUID(), type, summary, createdAt: new Date().toISOString() };
+  return {
+    id: crypto.randomUUID(),
+    type,
+    summary,
+    createdAt: new Date().toISOString(),
+    undone: false,
+  };
 }
 
 function roundQuantity(value: number): number {
@@ -171,14 +173,12 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     const { undoStack, changeLog } = get();
     if (undoStack.length === 0) return;
     const last = undoStack[undoStack.length - 1];
-    const undoneEntry = changeLog.find((entry) => entry.id === last.changeEntryId);
     set({
       recipe: last.recipe,
       undoStack: undoStack.slice(0, -1),
-      changeLog: [
-        ...changeLog,
-        makeLogEntry("undo", undoneEntry ? `Undid: ${undoneEntry.summary}` : "Undid last change"),
-      ],
+      changeLog: changeLog.map((entry) =>
+        entry.id === last.changeEntryId ? { ...entry, undone: true } : entry,
+      ),
     });
   },
   toggleIngredientChecked: (id) => {

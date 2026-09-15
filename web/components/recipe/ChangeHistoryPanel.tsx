@@ -7,7 +7,6 @@ const TYPE_LABELS: Record<ChangeLogEntryType, string> = {
   quantity: "Ingredient Quantity",
   "unit-conversion": "Unit Conversion",
   "ai-request": "AI Request",
-  undo: "Undo",
 };
 
 function formatTimestamp(iso: string): string {
@@ -58,7 +57,13 @@ export default function ChangeHistoryPanel({ onClose }: { onClose: () => void })
                       {formatTimestamp(entry.createdAt)}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-gray-900">{entry.summary}</p>
+                  <p
+                    className={`mt-1 text-sm ${
+                      entry.undone ? "text-gray-400 line-through" : "text-gray-900"
+                    }`}
+                  >
+                    {entry.summary}
+                  </p>
                 </li>
               ))}
             </ul>
