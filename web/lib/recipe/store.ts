@@ -65,6 +65,7 @@ interface RecipeStore {
   rescaleByIngredient: (ingredientId: string, newQuantity: number) => void;
   logAiRequest: (subject: string, question: string) => void;
   logStepAiRequest: (fullText: string, wordStart: number, wordEnd: number, question: string) => void;
+  logGeneralAiRequest: (question: string) => void;
 }
 
 function isSameRecipe(a: Recipe, b: Recipe): boolean {
@@ -269,6 +270,15 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
         ...changeLog,
         { ...entry, question, stepHighlight: { fullText, wordStart, wordEnd } },
       ],
+    });
+  },
+  logGeneralAiRequest: (question) => {
+    const { recipe, undoStack, changeLog } = get();
+    if (!recipe) return;
+    const entry = makeLogEntry("ai-request", `Asked: ${question}`);
+    set({
+      undoStack: [...undoStack, { recipe, changeEntryId: entry.id }],
+      changeLog: [...changeLog, entry],
     });
   },
 }));

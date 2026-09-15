@@ -2,6 +2,7 @@
 
 import RecipeWorkspace from "@/components/recipe/RecipeWorkspace";
 import WorkspaceMenu from "@/components/recipe/WorkspaceMenu";
+import AskAiButton from "@/components/recipe/AskAiButton";
 import ImportRecipeButton from "@/components/recipe/ImportRecipeButton";
 import { useRecipeStore } from "@/lib/recipe/store";
 
@@ -10,7 +11,8 @@ export default function Home() {
 
   return (
     <main className="relative min-h-screen">
-      <div className="absolute right-6 top-6">
+      <div className="absolute right-6 top-6 flex items-center gap-2">
+        <AskAiButton />
         <WorkspaceMenu />
       </div>
       {recipe ? (
