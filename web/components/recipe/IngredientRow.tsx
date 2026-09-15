@@ -3,6 +3,7 @@
 import type { Ingredient } from "@/lib/recipe/types";
 import { useRecipeStore } from "@/lib/recipe/store";
 import EditablePopover from "./EditablePopover";
+import IngredientQuestionPopover from "./IngredientQuestionPopover";
 
 export default function IngredientRow({ ingredient }: { ingredient: Ingredient }) {
   const checked = useRecipeStore((s) => s.checkedIngredientIds.includes(ingredient.id));
@@ -32,7 +33,15 @@ export default function IngredientRow({ ingredient }: { ingredient: Ingredient }
       </span>
       <span className="text-sm text-gray-900">
         {ingredient.size ? `${ingredient.size} ` : ""}
-        {ingredient.item}
+        <IngredientQuestionPopover
+          label={`Ask about ${ingredient.item}`}
+          onSubmit={(question) => {
+            // No AI wiring yet — this is the seam the substitution feature will plug into.
+            console.log(`[ingredient question] ${ingredient.id}:`, question);
+          }}
+        >
+          {ingredient.item}
+        </IngredientQuestionPopover>
         {ingredient.prep ? `, ${ingredient.prep}` : ""}
         {ingredient.optional && (
           <span className="ml-2 text-xs text-gray-400">(optional)</span>
