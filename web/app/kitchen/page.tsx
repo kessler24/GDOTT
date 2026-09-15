@@ -1,6 +1,7 @@
 "use client";
 
 import { useRecipeStore } from "@/lib/recipe/store";
+import KitchenItemRow from "@/components/kitchen/KitchenItemRow";
 
 export default function MyKitchenPage() {
   const kitchenItems = useRecipeStore((s) => s.kitchenItems);
@@ -16,12 +17,7 @@ export default function MyKitchenPage() {
       ) : (
         <ul className="mt-4 space-y-2">
           {kitchenItems.map((item) => (
-            <li
-              key={item.id}
-              className="rounded-md border border-gray-200 p-3 text-sm text-gray-900"
-            >
-              {item.item}
-            </li>
+            <KitchenItemRow key={item.id} item={item} />
           ))}
         </ul>
       )}

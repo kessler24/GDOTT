@@ -27,6 +27,7 @@ interface RecipeStore {
   toggleIngredientChecked: (id: string) => void;
   toggleFavorite: (id: string) => void;
   deleteSaved: (id: string) => void;
+  deleteKitchenItem: (id: string) => void;
 }
 
 function isSameRecipe(a: Recipe, b: Recipe): boolean {
@@ -123,5 +124,9 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
   deleteSaved: (id) => {
     const { savedRecipes } = get();
     set({ savedRecipes: savedRecipes.filter((saved) => saved.id !== id) });
+  },
+  deleteKitchenItem: (id) => {
+    const { kitchenItems } = get();
+    set({ kitchenItems: kitchenItems.filter((item) => item.id !== id) });
   },
 }));
