@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRecipeStore } from "@/lib/recipe/store";
+import ChangeHistoryPanel from "./ChangeHistoryPanel";
 
 export default function WorkspaceMenu() {
   const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const newWorkspace = useRecipeStore((s) => s.newWorkspace);
   const undo = useRecipeStore((s) => s.undo);
   const canUndo = useRecipeStore((s) => s.undoStack.length > 0);
@@ -62,9 +64,21 @@ export default function WorkspaceMenu() {
             >
               Undo
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setHistoryOpen(true);
+                setOpen(false);
+              }}
+              className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              History
+            </button>
           </div>
         </>
       )}
+      {historyOpen && <ChangeHistoryPanel onClose={() => setHistoryOpen(false)} />}
     </div>
   );
 }

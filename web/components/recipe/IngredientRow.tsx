@@ -2,6 +2,7 @@
 
 import type { Ingredient } from "@/lib/recipe/types";
 import { useRecipeStore } from "@/lib/recipe/store";
+import { formatIngredientDescription } from "@/lib/recipe/format";
 import EditablePopover from "./EditablePopover";
 import IngredientQuestionPopover from "./IngredientQuestionPopover";
 
@@ -9,6 +10,8 @@ export default function IngredientRow({ ingredient }: { ingredient: Ingredient }
   const checked = useRecipeStore((s) => s.checkedIngredientIds.includes(ingredient.id));
   const toggleChecked = useRecipeStore((s) => s.toggleIngredientChecked);
   const rescaleByIngredient = useRecipeStore((s) => s.rescaleByIngredient);
+  const logAiRequest = useRecipeStore((s) => s.logAiRequest);
+  const ingredientDescription = formatIngredientDescription(ingredient);
 
   return (
     <li className="flex items-baseline gap-3 border-b border-gray-100 py-2 last:border-0">
@@ -35,10 +38,7 @@ export default function IngredientRow({ ingredient }: { ingredient: Ingredient }
         {ingredient.size ? `${ingredient.size} ` : ""}
         <IngredientQuestionPopover
           label={`Ask about ${ingredient.item}`}
-          onSubmit={(question) => {
-            // No AI wiring yet — this is the seam the substitution feature will plug into.
-            console.log(`[ingredient question] ${ingredient.id}:`, question);
-          }}
+          onSubmit={(question) => logAiRequest(ingredientDescription, question)}
         >
           {ingredient.item}
         </IngredientQuestionPopover>
@@ -47,10 +47,7 @@ export default function IngredientRow({ ingredient }: { ingredient: Ingredient }
             {", "}
             <IngredientQuestionPopover
               label={`Ask about ${ingredient.prep}`}
-              onSubmit={(question) => {
-                // No AI wiring yet — this is the seam the substitution feature will plug into.
-                console.log(`[prep question] ${ingredient.id}:`, question);
-              }}
+              onSubmit={(question) => logAiRequest(ingredientDescription, question)}
             >
               {ingredient.prep}
             </IngredientQuestionPopover>
