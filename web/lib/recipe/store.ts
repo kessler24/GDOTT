@@ -250,17 +250,25 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     });
   },
   logAiRequest: (subject, question) => {
-    const { changeLog } = get();
+    const { recipe, undoStack, changeLog } = get();
+    if (!recipe) return;
+    const entry = makeLogEntry("ai-request", `Asked about "${subject}": ${question}`);
     set({
-      changeLog: [...changeLog, makeLogEntry("ai-request", `Asked about "${subject}": ${question}`)],
+      undoStack: [...undoStack, { recipe, changeEntryId: entry.id }],
+      changeLog: [...changeLog, entry],
     });
   },
   logStepAiRequest: (fullText, wordStart, wordEnd, question) => {
-    const { changeLog } = get();
+    const { recipe, undoStack, changeLog } = get();
+    if (!recipe) return;
     const highlighted = fullText.split(" ").slice(wordStart, wordEnd + 1).join(" ");
     const entry = makeLogEntry("ai-request", `Asked about "${highlighted}": ${question}`);
     set({
-      changeLog: [...changeLog, { ...entry, question, stepHighlight: { fullText, wordStart, wordEnd } }],
+      undoStack: [...undoStack, { recipe, changeEntryId: entry.id }],
+      changeLog: [
+        ...changeLog,
+        { ...entry, question, stepHighlight: { fullText, wordStart, wordEnd } },
+      ],
     });
   },
 }));
