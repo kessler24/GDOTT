@@ -18,6 +18,7 @@ export default function StepText({ text }: { text: string }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLSpanElement>(null);
 
   // Finish the drag no matter where the mouse is released.
   useEffect(() => {
@@ -29,6 +30,22 @@ export default function StepText({ text }: { text: string }) {
     window.addEventListener("mouseup", finish);
     return () => window.removeEventListener("mouseup", finish);
   }, [selecting]);
+
+  // Close on a click outside the words/popover. This is a plain listener, not a
+  // full-screen overlay — an overlay would sit on top of the words once open and
+  // swallow the second click of a double-click, breaking select-whole-line.
+  useEffect(() => {
+    if (!popoverOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setPopoverOpen(false);
+        setRange(null);
+        setAnchor(null);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [popoverOpen]);
 
   useEffect(() => {
     if (!popoverOpen) return;
@@ -75,7 +92,7 @@ export default function StepText({ text }: { text: string }) {
   };
 
   return (
-    <span className="relative">
+    <span ref={containerRef} className="relative">
       <span className="select-none">
         {words.map((word, i) => {
           const isSelected = range !== null && i >= range.start && i <= range.end;
@@ -88,9 +105,7 @@ export default function StepText({ text }: { text: string }) {
                 }}
                 onMouseEnter={() => extendSelect(i)}
                 onDoubleClick={selectAll}
-                className={`cursor-pointer rounded px-0.5 ${
-                  isSelected ? "bg-yellow-200" : "hover:bg-yellow-100"
-                }`}
+                className={`cursor-pointer rounded px-0.5 ${isSelected ? "bg-yellow-200" : ""}`}
               >
                 {word}
               </span>
@@ -100,42 +115,39 @@ export default function StepText({ text }: { text: string }) {
         })}
       </span>
       {popoverOpen && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={closePopover} />
-          <div className="absolute left-0 top-full z-20 mt-1 flex w-80 items-end gap-1.5 rounded-md border border-gray-200 bg-white p-2 shadow-lg">
-            <textarea
-              ref={textareaRef}
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") closePopover();
-              }}
-              placeholder="Ask about the highlighted text"
-              aria-label="Ask about the highlighted text"
-              rows={1}
-              className="flex-1 resize-none overflow-hidden rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-            />
-            <button
-              type="button"
-              onClick={handleSubmit}
-              aria-label="Submit"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gray-900 text-white hover:bg-gray-800"
+        <div className="absolute left-0 top-full z-20 mt-1 flex w-80 items-end gap-1.5 rounded-md border border-gray-200 bg-white p-2 shadow-lg">
+          <textarea
+            ref={textareaRef}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") closePopover();
+            }}
+            placeholder="Ask about the highlighted text"
+            aria-label="Ask about the highlighted text"
+            rows={1}
+            className="flex-1 resize-none overflow-hidden rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+          />
+          <button
+            type="button"
+            onClick={handleSubmit}
+            aria-label="Submit"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gray-900 text-white hover:bg-gray-800"
+          >
+            <svg
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
             >
-              <svg
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-4 w-4"
-              >
-                <line x1="4" y1="10" x2="16" y2="10" />
-                <polyline points="11 5 16 10 11 15" />
-              </svg>
-            </button>
-          </div>
-        </>
+              <line x1="4" y1="10" x2="16" y2="10" />
+              <polyline points="11 5 16 10 11 15" />
+            </svg>
+          </button>
+        </div>
       )}
     </span>
   );
