@@ -2,17 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useRecipeStore } from "@/lib/recipe/store";
-import type { Recipe } from "@/lib/recipe/types";
+import SavedRecipeRow from "@/components/recipe/SavedRecipeRow";
 
 export default function RecipeHistoryPage() {
   const savedRecipes = useRecipeStore((s) => s.savedRecipes);
   const loadRecipe = useRecipeStore((s) => s.loadRecipe);
   const router = useRouter();
-
-  const handleOpen = (recipe: Recipe) => {
-    loadRecipe(recipe);
-    router.push("/");
-  };
 
   return (
     <div className="mx-auto max-w-2xl p-6">
@@ -23,16 +18,15 @@ export default function RecipeHistoryPage() {
         </p>
       ) : (
         <ul className="mt-4 space-y-2">
-          {savedRecipes.map((recipe, index) => (
-            <li key={index}>
-              <button
-                type="button"
-                onClick={() => handleOpen(recipe)}
-                className="w-full rounded-md border border-gray-200 p-3 text-left text-sm text-gray-900 hover:bg-gray-50"
-              >
-                {recipe.title}
-              </button>
-            </li>
+          {savedRecipes.map((saved) => (
+            <SavedRecipeRow
+              key={saved.id}
+              saved={saved}
+              onOpen={() => {
+                loadRecipe(saved.recipe);
+                router.push("/");
+              }}
+            />
           ))}
         </ul>
       )}
