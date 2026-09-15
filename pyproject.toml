@@ -1,0 +1,39 @@
+[project]
+name = "gdott"
+version = "0.1.0"
+description = "Recipe Adjuster — AI-assisted recipe editing"
+requires-python = ">=3.12"
+dependencies = ["pydantic", "pint"]
+
+[project.optional-dependencies]
+parsing = ["anthropic", "trafilatura", "pdfplumber", "httpx", "ingredient-parser"]
+api = ["fastapi", "uvicorn"]
+dev = ["pytest", "ruff", "mypy", "import-linter"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/recipe_core", "src/recipe_parsing", "src/recipe_cli", "src/recipe_api"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+
+[tool.mypy]
+packages = ["recipe_core", "recipe_parsing"]
+strict = true
+
+[[tool.importlinter.contracts]]
+name = "core stays independent"
+type = "forbidden"
+source_modules = ["recipe_core"]
+forbidden_modules = [
+  "recipe_parsing", "recipe_api", "recipe_cli",
+  "anthropic", "fastapi", "httpx",
+]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not live'"
+markers = ["live: hits the real network; excluded from the default run"]

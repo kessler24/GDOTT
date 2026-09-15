@@ -2,7 +2,7 @@
 
 **Status:** Draft / pre-build
 **Author:** Molly Kessler
-**Last updated:** 2026-08-23
+**Last updated:** 2026-09-15
 
 ---
 
@@ -101,7 +101,7 @@ history persistence, the public recipe/reference corpus, mid-cooking mode, and w
 Browser (React/TS)          Backend (Python)              External
 ┌──────────────────┐        ┌────────────────────┐        ┌─────────────┐
 │ Recipe workspace │        │ Auth + rate limit  │        │ Recipe site │
-│  ingredient rows │◄──────►│ Import / parse     │◄──────►│  (JSON-LD)  │
+│  ingredient rows │◄──────►│ Import / parse     │◄──────►│   (HTML)    │
 │  step list       │  HTTPS │ Edit orchestration │        └─────────────┘
 │  change highlight│  JSON  │ Patch application  │        ┌─────────────┐
 └──────────────────┘        │ Usage accounting   │◄──────►│ Claude API  │
@@ -127,9 +127,10 @@ and the recipe document as the single shared data contract between clients.
 
 ## 4. The Models
 
-The proposal originally described three models. On closer inspection, only one of them is
-genuinely an open-ended AI problem, one is mostly a solved parsing problem, and one is mostly
-rules. Recognizing that is itself a design win — it is where most of the cost savings come from.
+Three models, with quite different characters. Model 1 is an open-ended agent over a constrained
+set of operations. Model 2 is a bounded extraction task where the schema does most of the work.
+Model 3 is mostly rules with a model only at the edges. Matching each one's approach to its
+actual difficulty is where the design effort goes.
 
 ### Model 1 — The recipe editing agent
 
@@ -235,7 +236,8 @@ inference entirely: instant, free, and exactly correct. Same for `scale` when th
 ingredient has a clean unit and the recipe contains none of the known-nonlinear ingredients. Only
 escalate to the model when there's an actual judgment call — a count-to-weight guess, a leavener
 in the ingredient list, a step that names a specific pan. This is the same cheapest-tier-first
-pattern as the parser cascade in Model 2, and it applies to what will likely be the two most
+principle as routing parsing through one model call in Model 2 — spend inference only where
+judgment is required — and it applies to what will likely be the two most
 frequently clicked buttons.
 
 **Model comparison for this role:**
@@ -253,35 +255,48 @@ cheap model is actually worse.
 
 ### Model 2 — The recipe parser
 
-**This is mostly not a model problem, and recognizing that is the point.**
+**A model parses every input into the editable format.** Recipes arrive as web pages, PDFs,
+photos, and pasted text, and no rule-based approach covers that range. One model call handles all
+of them, which means one code path to build, test, and reason about instead of a branch per
+format.
 
-Nearly every recipe site on the internet embeds machine-readable `schema.org/Recipe` markup as
-JSON-LD, because Google Rich Results requires it. That means for a URL import, the structured
-recipe usually already exists in the page — no model, no cost, no latency, no hallucination risk.
+**The pipeline:**
 
-**Design it as a cascade, cheapest first:**
+| Stage | What happens |
+|---|---|
+| 1. Acquire | Fetch the URL, read the uploaded file, or take the pasted text. |
+| 2. Reduce | For web pages, strip boilerplate — nav, ads, comments, the 1,500-word preamble — with [`trafilatura`](https://trafilatura.readthedocs.io/) or readability. This is not recipe parsing; it's removing content that isn't the article, and it cuts input tokens by 5–10x. For PDFs, `pdfplumber` for text; for scanned PDFs and photos, pass the file to the model directly, since Claude reads PDFs and images natively. |
+| 3. Extract | One call with structured outputs (`output_config.format`) against the `Recipe` schema, via `client.messages.parse()`. The response is a validated object, not text to parse. |
+| 4. Validate | Pydantic validation plus sanity checks — non-empty ingredients, steps present, quantities parseable, units known to Pint. On failure, retry once with the errors fed back. |
 
-| Tier | Input | Method | Cost |
-|---|---|---|---|
-| 1 | URL | [`recipe-scrapers`](https://github.com/hhursev/recipe-scrapers) — site-specific parsers with a schema.org fallback. Handles the large majority of recipe sites. | Free |
-| 2 | URL, no markup | [`extruct`](https://github.com/scrapinghub/extruct) to pull any JSON-LD / microdata, then fall through if empty. | Free |
-| 3 | PDF | `pdfplumber` for text extraction, then tier 4 on the extracted text. For image-based PDFs, skip to tier 4 — Claude accepts PDFs natively as base64 `document` blocks and reads scanned pages. | Cheap |
-| 4 | Free text / anything left | Haiku 4.5 with structured outputs (`output_config.format`) against the recipe schema, via `client.messages.parse()`. | ~$0.005/recipe |
+**Model choice:** Haiku 4.5 (`claude-haiku-4-5`, $1/$5 per MTok). Extraction is a
+transcription-shaped task, not a reasoning-heavy one, and its 200K context is far more than a
+reduced recipe page needs. Escalate to Sonnet 5 only if the eval suite shows Haiku failing on a
+real class of input.
 
-Tiers 1–2 should cover most real usage at zero marginal cost. That is a much better story —
-technically and financially — than routing everything through a model, and it's a concrete
-thing to point at in an interview.
+**Cost:** roughly $0.005–0.01 per recipe after boilerplate removal. **Cache aggressively** —
+key parsed results by URL so a repeat import of the same recipe is free, and so the golden-set
+eval never re-pays for the same page.
 
-**The important detail:** every tier must emit the *same* validated recipe object. Define it
-once as a Pydantic model and make every parser return that type. The seam between "how it was
+**Structured outputs are what make this reliable.** Constraining the response to the `Recipe`
+schema means the model cannot return a malformed recipe; the failure mode is a *wrong* value in a
+valid shape, which validation and the eval suite are built to catch. This is materially different
+from asking for JSON in a prompt and hoping.
+
+**The important detail:** every input format must emit the *same* validated recipe object. Define
+it once as a Pydantic model and make every path return that type. The seam between "how it was
 parsed" and "what a recipe is" is where this codebase will either stay clean or rot.
 
 **Ingredient string parsing** ("1 medium onion, finely diced" → `{qty: 1, unit: null, size:
-"medium", item: "onion", prep: "finely diced"}`) is its own sub-problem, and schema.org gives
-you only the raw string. Options: the `ingredient-parser` library (a trained CRF/transformer
-model, runs locally, free), a hand-rolled regex layer, or batching them to Haiku. Start with
-the library; it's a well-defined task with an existing solution, and swapping it out later is
-a one-file change.
+"medium", item: "onion", prep: "finely diced"}`) can be part of the same extraction call — ask
+for structured ingredient fields directly in the schema rather than a list of strings. That
+avoids a second pass. If accuracy on quantities and units turns out to be the weak spot, the
+`ingredient-parser` library (a trained model, runs locally, free) is a drop-in second pass over
+just that field.
+
+**This is the piece the eval suite exists to measure.** Parsing accuracy is now a model-dependent
+number rather than a deterministic guarantee, which makes the golden-set suite load-bearing
+rather than nice-to-have — see below.
 
 ### Model 3 — The pantry/kitchen inference
 
@@ -301,10 +316,16 @@ Defer this entirely until after accounts exist.
 This is the highest-leverage thing to build early and the thing most portfolio projects lack.
 Two suites:
 
-1. **Parser accuracy (deterministic, in CI).** A golden set of ~40 recipes across sites, PDFs,
-   and pasted text, with hand-labeled expected output. Assert exact-match on ingredient counts,
-   quantities, and units. Runs offline against fixtures, so it's free and fast — the same
-   offline-fixtures/live-integration split that worked on the Beaty capstone applies directly here.
+1. **Parser accuracy.** A golden set of ~40 recipes across sites, PDFs, photos, and pasted text,
+   with hand-labeled expected output. Score ingredient counts, quantities, units, and step counts
+   against the labels.
+
+   Because parsing is now a model call, this suite costs money and isn't deterministic — which
+   would normally keep it out of CI. The fix is to **record and replay**: save the model's
+   response for each fixture, and have CI replay the recorded responses. CI then verifies that
+   *the code around the model* still works, for free and deterministically, while a manual
+   `--live` run re-records against the real model and reports the true accuracy number. Cheap,
+   and it keeps a real test suite on every push.
 2. **Edit quality (LLM-as-judge, run manually).** A set of ~25 (recipe, request) pairs with
    rubric-scored expected behavior. Grade with a separate model call. Track the score across
    prompt and model changes so "does Haiku work here?" becomes a measurement rather than a
@@ -364,61 +385,45 @@ both have usable free tiers.
 
 ## 6. Frontend and Platform
 
-**Decision: web first, with the backend designed as a platform-neutral HTTP API so a SwiftUI
-client can be added later without backend rework.**
+**Decided and set up: a web app — Next.js (App Router) in `web/`, deployed on Vercel — backed
+by a FastAPI (Python) API in `src/recipe_api/`.** The backend stays a platform-neutral
+HTTP/JSON API so a SwiftUI client could be added later without backend rework.
 
-### Platform comparison
+**Platform: web, not native.** Native iOS remains a possible later addition once the product is
+proven — the $99/yr Apple Developer fee isn't the real cost; needing a second client and App
+Store review turning a two-minute fix into a two-day one is. React Native / Expo was considered
+and passed over: it would be a worse fit for both iOS and Android than a dedicated client, which
+is the wrong trade for this project's job-market goal.
 
-| | Web app | Native iOS | React Native / Expo |
-|---|---|---|---|
-| Cost | $0 (Vercel free tier) | $99/yr Apple Developer | $0 until you ship to the store |
-| Language | TypeScript — a gap I want to close | Swift — already know it | TypeScript |
-| Iteration speed | Push to deploy, seconds | App Store review, days | Fast in dev, review to ship |
-| Reach | Everyone with a browser | iOS only | iOS + Android |
-| Fit for text editing | Good — larger screen suits a recipe workspace | Cramped for side-by-side diffs | Cramped |
-| Job-market signal | React/TS is on the majority of SWE postings | Narrower | Moderate |
-| Verdict | **MVP** | Later, once the product is proven | Skip — neither best-in-class |
+**Frontend framework: Next.js (App Router).** Most-demanded React framework, free Vercel
+hosting, and API routes are available alongside the UI if ever needed. (Vite + React SPA and
+SvelteKit were the alternatives considered; passed over for no built-in backend surface and too
+small a job market, respectively.)
 
-The $99 is not the real cost of the iOS path; the real cost is that it needs the same backend
-plus a second client, and App Store review turns a two-minute fix into a two-day one. Buy the
-license when there is something worth shipping to a store.
+**Backend framework: FastAPI (Python).** Keeps `trafilatura`, `pdfplumber`,
+`ingredient-parser`, and Pint in the same language as `recipe_core`/`recipe_parsing`; Pydantic
+models double as the API schema; async suits LLM streaming. This is why the backend is its own
+`src/recipe_api` package rather than Next.js API routes or Vercel Python functions — both would
+mean losing or awkwardly bridging to the Python ecosystem the parsing layer depends on.
 
-### Web stack comparison
+**Backend hosting: not yet decided.** Fly.io or Render, both on a free/low tier — pick whichever
+has less annoying cold-start behavior when it's time to deploy (see §7).
 
-**Framework**
+**Supporting choices, decided:**
 
-| Option | For | Against |
+| Layer | Decision | Why |
 |---|---|---|
-| **Next.js (App Router)** | Most-demanded React framework; free Vercel hosting; API routes can host the auth/rate-limit layer next to the UI | More concepts to learn at once (RSC, routing conventions) than plain React |
-| **Vite + React SPA** | Simplest possible React learning path; no framework magic | No built-in backend surface; needs separate hosting for the API; weaker resume signal |
-| **SvelteKit** | Genuinely nicer to write | Much smaller job market — wrong trade for this project's stated goal |
+| Recipe editor UI | Structured components — each ingredient its own row/input | The document is structured data, not prose. A rich text editor (TipTap/ProseMirror) would mean parsing prose back into structure on every keystroke. |
+| Change feedback | Highlight changed fields in place + one-line "what changed" summary, auto-dismissing | Changes apply automatically; the highlight is informational, not an approval gate. Hovering a changed field surfaces that operation's `reason`. |
+| Clarifying questions | Inline card in the workspace with batched questions and option buttons | A modal over the recipe would hide the context the user needs to answer. |
+| Undo | Turn-level, from the operation log | AI changes undo per-turn; the browser's native undo still applies inside a manually edited field. |
+| Styling | Tailwind (installed in `web/package.json`) | Ubiquitous in React codebases. |
+| State | Zustand (installed in `web/package.json`) | The operation log maps naturally onto a reducer-style store; Redux is more ceremony than this needs. |
+| Streaming responses | SSE from FastAPI | Perceived latency matters when a model call takes several seconds; polling would feel worse for no benefit. |
 
-**Backend**
-
-| Option | For | Against |
-|---|---|---|
-| **FastAPI (Python)** | Plays to existing Python strength; `recipe-scrapers`, `pdfplumber`, `ingredient-parser`, and Pint are all Python; Pydantic models double as the API schema; async suits LLM streaming | Second service to deploy; free tiers cold-start (~30s on Render free) |
-| **Next.js API routes only (TypeScript)** | One service, one deploy, no cold starts on Vercel | Loses the entire Python parsing ecosystem — would mean reimplementing tier 1–3 parsing or calling out to a Python service anyway |
-| **Vercel Python functions** | One deploy, keeps Python | Less conventional; tighter constraints on dependency size and execution time |
-
-**Leaning:** Next.js frontend on Vercel + FastAPI backend on Fly.io or Render. Two services is
-more setup, but the Python ecosystem argument for the parsing layer is decisive, and
-"React/TypeScript frontend calling a Python API" is exactly the architecture most job postings
-describe. Cold starts on free tiers are the main annoyance — a keep-alive ping or Fly.io's
-scale-to-zero-with-fast-wake mitigates it.
-
-**Supporting choices**
-
-| Layer | Option A | Option B | Note |
-|---|---|---|---|
-| Recipe editor UI | Structured components — each ingredient its own row/input | Rich text editor (TipTap / ProseMirror) | **Strongly prefer A.** The document is structured data, not prose. A rich text editor means parsing prose back into structure on every keystroke — a large amount of work to end up somewhere worse. |
-| Change feedback | Highlight changed fields in place + one-line "what changed" summary, auto-dismissing | Accept/reject queue | **Highlighting.** Changes apply automatically; the highlight is informational. Fade it after a few seconds or on next interaction so the recipe doesn't accumulate visual debris. Hovering a changed field surfaces that operation's `reason`. |
-| Clarifying questions | Inline card in the workspace with the batched questions and option buttons | Modal dialog | Inline — a modal over the recipe hides the context the user needs to answer |
-| Undo | Turn-level, from the operation log | Text-level editor undo | Turn-level for AI changes; the browser's native undo still applies inside a manually edited field |
-| Styling | Tailwind | CSS Modules | Tailwind, mostly because it's ubiquitous in React codebases |
-| State | Zustand or `useReducer` | Redux | The operation log maps naturally onto a reducer; Redux is more ceremony than this needs |
-| Streaming responses | SSE from FastAPI | Poll | SSE — perceived latency matters a lot when a model call takes 5 seconds |
-| Auth (post-MVP) | Supabase Auth | Clerk | Both have workable free tiers; Supabase bundles the Postgres |
+**Still open — auth provider (post-MVP): Supabase Auth vs. Clerk.** Both have workable free
+tiers; Supabase bundles the Postgres instance §5 already calls for, a mild point in its favor,
+but neither is decided or set up yet.
 
 ---
 
@@ -467,16 +472,21 @@ Order-of-magnitude, to size the spend cap:
 
 | Operation | Model | Est. tokens (in/out) | Est. cost |
 |---|---|---|---|
-| URL import, tiers 1–2 | none | — | $0.00 |
-| Parse fallback | Haiku 4.5 | 2K / 1K | ~$0.007 |
+| Recipe import (after boilerplate removal) | Haiku 4.5 | 3K / 1.5K | ~$0.010 |
+| Recipe import, cache hit on a known URL | none | — | $0.00 |
 | One edit turn | Sonnet 5 | 4K / 600 | ~$0.021 |
 | One edit turn | Opus 5 | 4K / 600 | ~$0.035 |
 
-A typical session — one import plus six edits — lands around **$0.10–0.20**. Fifty beta users
-at four sessions a month is roughly **$20–40/month**, which is why the $20 cap is a real
-constraint and prompt caching on the system prompt is worth doing early. It also means an
-unprotected endpoint is expensive fast: a script making one request per second at Sonnet
-pricing is roughly $75/hour.
+A typical session — one import plus six edits — lands around **$0.12–0.22**. Fifty beta users
+at four sessions a month is roughly **$25–45/month**, which is why the $20 cap is a real
+constraint, why URL-keyed parse caching matters, and why prompt caching on the system prompt is
+worth doing early. It also means an unprotected endpoint is expensive fast: a script making one
+request per second at Sonnet pricing is roughly $75/hour.
+
+Note that every import now costs something, where previously most were free. Two consequences
+worth building in from the start: **cache parsed recipes by URL**, since popular recipes will be
+imported repeatedly across users, and **cap import size before the call** rather than after —
+step 2's boilerplate removal is a cost control as much as a quality one.
 
 ### Also free-tier friendly
 
@@ -514,9 +524,10 @@ depending on any of them.
 
 Each step should be independently demoable, which keeps it interview-ready at every stage.
 
-1. **Schema + parser cascade, Python only, no UI.** CLI that takes a URL/PDF/text and prints a
-   validated `Recipe`. Build the golden-set eval alongside it. This is the piece closest to
-   existing strengths — get a win on the board.
+1. **Schema + AI parser, Python only, no UI.** CLI that takes a URL/PDF/photo/text and prints a
+   validated `Recipe`, via boilerplate removal plus one structured-output call. Build the
+   golden-set eval and the record/replay fixtures alongside it — parsing accuracy is the number
+   everything downstream depends on, so it needs to be measurable from day one.
 2. **Patch operations + apply logic, pure Python.** Including batch validation and
    transactional apply — since nothing downstream reviews these, this layer has to be correct.
    Unit-tested, no model involved.

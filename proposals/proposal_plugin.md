@@ -30,8 +30,9 @@ model decides *what* should change and the connector computes *the numbers*.
 
 1. User finds a recipe for chicken fajitas online.
 2. In Claude, they paste the link: *"pull this in, I'm missing a couple of things."*
-3. Claude calls `import_recipe`. The connector fetches and parses it, and the recipe renders in
-   the conversation as an editable workspace.
+3. Claude calls `import_recipe`. The connector fetches the page and strips it down to the actual
+   content; Claude reads that and calls `create_recipe` with the structured result. The recipe
+   renders in the conversation as an editable workspace.
 4. User: *"I don't have an onion."*
 5. Claude asks whether they have onion powder.
 6. User confirms they do.
@@ -93,7 +94,7 @@ descriptions steer it. §8 covers what can be measured and what can't.
             │
    ┌────────▼─────────────────────────────┐        ┌──────────────┐
    │  recipe-core  (Python library)       │───────►│ Recipe sites │
-   │    parser cascade                    │        │  (JSON-LD)   │
+   │    fetch + boilerplate removal       │        │   (HTML)     │
    │    patch operations + validation     │        └──────────────┘
    │    Pint conversion · rescaling       │
    └──────────────────────────────────────┘
@@ -119,8 +120,11 @@ Every tool uses a strict JSON schema (`additionalProperties: false`, explicit `r
 arguments validate exactly and the server never has to defensively parse a malformed call.
 
 ```text
-import_recipe(source)                      → recipe_id, rendered workspace
-                                             source is a URL, raw text, or an uploaded file
+import_recipe(source)                      → reduced content + Recipe JSON schema
+                                             source is a URL, raw text, or an uploaded file.
+                                             The host extracts; see §6.
+create_recipe(extracted)                   → recipe_id, rendered workspace
+                                             validates the host's extraction and opens a session
 
 replace_ingredient(recipe_id, ingredient_id, new_ingredient, reason)
 adjust_quantity(recipe_id, ingredient_id, new_quantity, new_unit, reason)
@@ -208,27 +212,33 @@ with no framework required, so it stays small and loads fast.
 `recipe-core` is where the real work is. It is a plain Python library with no model calls, no web
 framework, and no MCP dependency, so it can be developed and tested entirely on its own.
 
-### Parsing: a cascade, cheapest tier first
+### Parsing: the host model does it
 
-Nearly every recipe site embeds machine-readable `schema.org/Recipe` markup as JSON-LD, because
-Google Rich Results requires it. For most URLs the structured recipe already exists in the page —
-no guessing, no latency, no chance of a hallucinated ingredient.
+Recipes arrive as web pages, PDFs, photos, and pasted text, and no rule-based approach covers
+that range. A model handles all of them through one path — and in this architecture that model
+is the user's, which makes the most expensive part of parsing free to operate.
 
-| Tier | Input | Method |
-|---|---|---|
-| 1 | URL | [`recipe-scrapers`](https://github.com/hhursev/recipe-scrapers) — site-specific parsers with a schema.org fallback. Covers the large majority of recipe sites. |
-| 2 | URL, no site parser | [`extruct`](https://github.com/scrapinghub/extruct) to pull whatever JSON-LD or microdata exists. |
-| 3 | PDF | `pdfplumber` for text extraction, then tier 4 on the result. |
-| 4 | Anything left | Hand the raw text back to the host model with the target schema and let it structure the result — the one place where parsing uses inference, and it's the user's, not ours. |
+The division of labor:
 
-Every tier must emit the *same* validated `Recipe` object. Define it once as a Pydantic model and
-make every parser return that type. The seam between "how it was parsed" and "what a recipe is"
-is where this codebase will either stay clean or rot.
+| Stage | Where it runs |
+|---|---|
+| 1. Acquire | Connector. Fetch the URL, read the uploaded file, take the pasted text. |
+| 2. Reduce | Connector. Strip boilerplate from web pages with [`trafilatura`](https://trafilatura.readthedocs.io/) — nav, ads, comments, the long preamble. `pdfplumber` for text PDFs. This keeps the host's context small, which is a courtesy to the user's token budget rather than a cost saving for us. |
+| 3. Extract | **Host model.** `import_recipe` returns the reduced content plus the `Recipe` JSON schema, and the model calls back with structured data. Scanned PDFs and photos go to the host directly, since it reads them natively. |
+| 4. Validate | Connector. Pydantic validation plus sanity checks — non-empty ingredients, steps present, quantities parseable, units known to Pint. On failure, return a structured error so the model can correct itself. |
 
-**Ingredient string parsing** — turning `"1 medium onion, finely diced"` into structured fields —
-is its own sub-problem, since schema.org gives only the raw string. Use the `ingredient-parser`
-library, which is a trained model that runs locally and free. It's a well-defined task with an
-existing solution, and swapping it out later is a one-file change.
+This makes `import_recipe` a two-step tool rather than a one-shot: the connector prepares and
+validates, the host does the language work in between. It's slightly more protocol than a single
+call, and it's what keeps the expensive half on the user's subscription.
+
+Every input format must emit the *same* validated `Recipe` object. Define it once as a Pydantic
+model and make every path produce that type. The seam between "how it was parsed" and "what a
+recipe is" is where this codebase will either stay clean or rot.
+
+**Ingredient structure** — turning `"1 medium onion, finely diced"` into fields — should be part
+of the same extraction, by asking for structured ingredient fields in the schema rather than a
+list of strings. If quantities and units turn out to be the weak spot, the `ingredient-parser`
+library (a trained model, runs locally, free) is a drop-in second pass over just that field.
 
 ### Patch operations
 
@@ -257,7 +267,7 @@ grams to teaspoons.
 
 **Ingredient-dependent conversion** ("1 medium onion → ≈110 g", "1 cup flour → ≈120 g") is not a
 unit conversion at all — it needs to know the ingredient, and the answer is inherently
-approximate. Tier it like the parser: a small static density and count table for common
+approximate. Answer it locally where possible: a small static density and count table for common
 ingredients, built from USDA FoodData Central, which is free and public. Fall back to asking the
 host model only on a miss. Always render these with `≈` and keep the original text alongside.
 
@@ -401,8 +411,9 @@ cross-host differences are cheaper to find before the UI is finished than after.
 
 Each step should be independently demoable.
 
-1. **`Recipe` schema + parser cascade, CLI only.** Takes a URL, PDF, or text file and prints a
-   validated recipe. Build the golden-set eval suite alongside it. No MCP, no UI.
+1. **`Recipe` schema + import pipeline, CLI only.** Takes a URL, PDF, or text file, reduces it to
+   clean content, and prints a validated recipe — driving extraction against a model you supply
+   yourself at this stage, so the pipeline can be built and measured before the connector exists. Build the golden-set eval suite alongside it. No MCP, no UI.
 2. **Patch operations, validation, transactional apply.** Pure Python, thoroughly unit-tested.
    Nothing downstream reviews these changes, so this is the layer that has to be right.
 3. **Pint conversion and anchored rescale,** including the density table and the nonlinearity
